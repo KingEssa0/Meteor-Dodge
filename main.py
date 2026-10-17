@@ -14,6 +14,12 @@ pygame.display.set_caption("Meteor Dodge")
 
 clock = pygame.time.Clock()
 
+def draw_screen_text(text, font, color, center):
+    text_surface = font.render(text, True, color)
+    text_rect = text_surface.get_rect(center=center)
+    screen.blit(text_surface, text_rect)
+
+
 BLACK = (10, 10, 20)
 BLUE = (50, 160, 255)
 ORANGE = (255, 120, 40)
@@ -21,8 +27,11 @@ DARK_ORANGE = (190, 65, 25)
 WHITE = (255, 255, 255)
 RED = (255, 70, 70)
 
-font = pygame.font.Font(None, 12)
-big_font = pygame.font.Font(None, 24)
+font = pygame.font.Font(None, 18)
+big_font = pygame.font.Font(None, 36)
+
+menu_font = pygame.font.Font(None, 42)
+subtitle_font = pygame.font.Font(None, 20)
 
 ship_img = pygame.image.load("assets/ship.png").convert_alpha()
 ship_img = pygame.transform.scale(ship_img, (25, 25))
@@ -70,8 +79,8 @@ stars = [
 spawn_timer = 0
 survival_time = 0
 high_score = 0
-playing = True
-
+playing = False
+game_started = False
 
 running = True
 
@@ -83,14 +92,18 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE and playing:
-                laser = pygame.Rect(
-                    player.centerx - 1,
-                    player.top,
-                    2,
-                    7
-                )
-                lasers.append(laser)
+            if event.key == pygame.K_SPACE:
+                if not game_started:
+                    playing = True
+                    game_started = True
+                elif playing:
+                    laser = pygame.Rect(
+                        player.centerx - 1,
+                        player.top,
+                        2,
+                        7
+                    )
+                    lasers.append(laser)
         if event.type == pygame.QUIT:
             running = False
 
@@ -98,14 +111,16 @@ while running:
             if event.key == pygame.K_ESCAPE:
                 running = False
 
-            if not playing and event.key == pygame.K_r:
+            if game_started and not playing and event.key == pygame.K_r:
                 player.x = GAME_WIDTH // 2 - PLAYER_WIDTH // 2
+                player.y = GAME_HEIGHT - 30
                 meteors.clear()
                 lasers.clear()
                 particles.clear()
                 spawn_timer = 0
                 survival_time = 0
                 playing = True
+                game_started = True
 
     keys = pygame.key.get_pressed()
 
@@ -150,6 +165,7 @@ while running:
 
             meteors.append({
                 "rect": pygame.Rect(x, -size, size, size),
+                "y": float(-size),
                 "speed": speed,
                 "image": meteor_image,
                 "mask": meteor_mask
@@ -161,7 +177,8 @@ while running:
         lasers  = [laser for laser in lasers if laser.bottom > 0]
 
         for meteor in meteors:
-            meteor["rect"].y += int(meteor["speed"] * dt)
+            meteor["y"] += meteor["speed"] * dt
+            meteor["rect"].y = round(meteor["y"])
 
 
             if player.colliderect(meteor["rect"]):
@@ -172,6 +189,8 @@ while running:
 
                 if ship_mask.overlap(meteor["mask"], offset):
                     playing = False
+                    lasers.clear()
+                    break
 
         remaining_meteors = []
         lasers_to_remove = []
@@ -196,6 +215,8 @@ while running:
                                 ORANGE, DARK_ORANGE, RED, WHITE
                             ])
                         })
+
+                    break
 
             if not hit:
                 remaining_meteors.append(meteor)
@@ -230,10 +251,12 @@ while running:
                 star[2] //2 + 1
             )
 
-    game_surface.blit(ship_img, player)
+    if game_started:
+        game_surface.blit(ship_img, player)
 
-    for laser in lasers:
-        pygame.draw.rect(game_surface, (0, 255, 255), laser)
+    if playing:
+        for laser in lasers:
+            pygame.draw.rect(game_surface, (0, 255, 255), laser)
 
     for particle in particles:
         particle["x"] += particle["vx"] * dt
@@ -263,37 +286,81 @@ while running:
     score = int(survival_time)
     high_score = max(high_score, score)
 
-    score_text = font.render(
-        f"Score: {score}", True, WHITE
-    )
-    game_surface.blit(score_text, (7, 7))
-    best_text = font.render(f"Best: {high_score}", True, WHITE)
-    game_surface.blit(best_text, (7, 20))
 
-    if not playing:
-        title = big_font.render(
-            "GAME OVER", True, RED
+    if playing:
+        draw_screen_text(
+            f"Score: {score}",
+            subtitle_font,
+            WHITE,
+            (90, 22)
         )
-        restart = font.render(
-            "Press R to restart | ESC to quit", True, WHITE
+
+        draw_screen_text(
+            f"Best: {high_score}",
+            subtitle_font,
+            WHITE,
+            (90, 48)
         )
-        game_surface.blit(
-            title,
-            title.get_rect(
-                center=(GAME_WIDTH // 2, GAME_HEIGHT // 2 - 30)
-            )
-        )
-        game_surface.blit(
-            restart,
-            restart.get_rect(
-                center=(GAME_WIDTH // 2, GAME_HEIGHT // 2 + 40)
-            )
-        )
+
+
 
     pixel_frame = pygame.transform.scale(
-        game_surface, (WIDTH, HEIGHT)
+        game_surface,
+        (WIDTH, HEIGHT)
     )
     screen.blit(pixel_frame, (0, 0))
+
+    if game_started and not playing:
+        draw_screen_text(
+            "GAME OVER",
+            pygame.font.Font(None, 72),
+            RED,
+            (WIDTH // 2, 245)
+        )
+
+        draw_screen_text(
+            f"Score: {score}",
+            subtitle_font,
+            WHITE,
+            (WIDTH // 2, 320)
+        )
+
+        draw_screen_text(
+            "Press R to restart | ESC to quit",
+            subtitle_font,
+            WHITE,
+            (WIDTH // 2, 370)
+        )
+
+    if not game_started:
+        draw_screen_text(
+            "METEOR DODGE",
+            menu_font,
+            BLUE,
+            (WIDTH // 2, 165)
+        )
+
+        draw_screen_text(
+            "Press SPACE to start",
+            subtitle_font,
+            WHITE,
+            (WIDTH // 2, 300)
+        )
+
+        draw_screen_text(
+            "Move: A/D or arrow keys",
+            subtitle_font,
+            WHITE,
+            (WIDTH // 2, 375)
+        )
+
+        draw_screen_text(
+            "Shoot: SPACE",
+            subtitle_font,
+            ORANGE,
+            (WIDTH // 2, 420)
+        )
+
     pygame.display.flip()
 
 pygame.quit()
