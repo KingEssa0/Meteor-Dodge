@@ -24,9 +24,11 @@ big_font = pygame.font.Font(None, 72)
 
 ship_img = pygame.image.load("assets/ship.png").convert_alpha()
 ship_img = pygame.transform.scale(ship_img, (75, 75))
+ship_mask = pygame.mask.from_surface(ship_img)
 
 meteor_img = pygame.image.load("assets/meteor.png").convert_alpha()
 meteor_img = pygame.transform.scale(meteor_img, (45, 45))
+meteor_mask = pygame.mask.from_surface(meteor_img)
 background_img = pygame.image.load("assets/background.png").convert()
 background_img = pygame.transform.scale(background_img, (WIDTH, HEIGHT))
 
@@ -52,6 +54,7 @@ player = pygame.Rect(
 meteors = []
 lasers = []
 LASER_SPEED = 500
+particles = []
 stars = [
     [random.randint(0, WIDTH), random.randint(0, HEIGHT), random.randint(1, 3)]
     for _ in range(80)
@@ -142,7 +145,13 @@ while running:
             lasers  = [laser for laser in lasers if laser.bottom > 0]
 
             if player.colliderect(meteor["rect"]):
-                playing = False
+                offset = (
+                    meteor["rect"].x - player.x,
+                    meteor["rect"].y - player.y
+                )
+
+                if ship_mask.overlap(meteor_mask, offset):
+                    playing = False
 
         remaining_meteors = []
 
@@ -152,8 +161,19 @@ while running:
             for laser in lasers:
                 if laser.colliderect(meteor["rect"]):
                     hit = True
-                    lasers.remove(laser)
-                    break
+
+                    rect = meteor["rect"]
+
+                    for _ in range(15):
+                        particles.append({
+                            "x": rect.centerx,
+                            "y": rect.centery,
+                            "vx": random.uniform(-180, 180),
+                            "vy": random.uniform(-180, 180),
+                            "life": 0.5,
+                            "size": random.randint(2, 5),
+                            "color": random.choice([ORANGE, RED, WHITE])
+                        })
 
             if not hit:
                 remaining_meteors.append(meteor)
@@ -193,12 +213,30 @@ while running:
     for laser in lasers:
         pygame.draw.rect(screen, (0, 255, 255), laser)
 
+    for particle in particles:
+        particle["x"] += particle["vx"] * dt
+        particle["y"] += particle["vy"] * dt
+        particle["life"] -= dt
+
+    particles = [
+        p for p in particles
+        if p["life"] > 0
+    ]
+
     for meteor in meteors:
         image = pygame.transform.scale(
             meteor_img,
             (meteor["rect"].width, meteor["rect"].height)
         )
         screen.blit(image, meteor["rect"])
+
+    for particle in particles:
+        pygame.draw.circle(
+            screen,
+            particle["color"],
+            (int(particle["x"]), int(particle["y"])),
+            particle["size"]
+        )
 
     score = int(survival_time)
     high_score = max(high_score, score)
