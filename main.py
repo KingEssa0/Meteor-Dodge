@@ -22,9 +22,17 @@ RED = (255, 70, 70)
 font = pygame.font.Font(None, 36)
 big_font = pygame.font.Font(None, 72)
 
+ship_img = pygame.image.load("assets/ship.png").convert_alpha()
+ship_img = pygame.transform.scale(ship_img, (75, 75))
 
-PLAYER_WIDTH = 40
-PLAYER_HEIGHT = 30
+meteor_img = pygame.image.load("assets/meteor.png").convert_alpha()
+meteor_img = pygame.transform.scale(meteor_img, (45, 45))
+background_img = pygame.image.load("assets/background.png").convert()
+background_img = pygame.transform.scale(background_img, (WIDTH, HEIGHT))
+
+
+PLAYER_WIDTH = 75
+PLAYER_HEIGHT = 75
 PLAYER_SPEED = 400
 
 METEOR_MIN_SIZE = 20
@@ -42,6 +50,12 @@ player = pygame.Rect(
 )
 
 meteors = []
+lasers = []
+LASER_SPEED = 500
+stars = [
+    [random.randint(0, WIDTH), random.randint(0, HEIGHT), random.randint(1, 3)]
+    for _ in range(80)
+]
 spawn_timer = 0
 survival_time = 0
 high_score = 0
@@ -57,6 +71,15 @@ while running:
         survival_time += dt
 
     for event in pygame.event.get():
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE and playing:
+                laser = pygame.Rect(
+                    player.centerx - 3,
+                    player.top,
+                    6,
+                    20
+                )
+                lasers.append(laser)
         if event.type == pygame.QUIT:
             running = False
 
@@ -86,45 +109,96 @@ while running:
     if playing:
         spawn_timer += dt
 
-        if spawn_timer >= METEOR_SPAWN_INTERVAL:
+        spawn_interval = max(0.2, METEOR_SPAWN_INTERVAL - survival_time * 0.01)
+        if spawn_timer >= spawn_interval:
             spawn_timer = 0
-            size = random.randint(METEOR_MIN_SIZE, METEOR_MAX_SIZE)
+            meteor_type = random.choice(["small", "normal", "large"])
+
+            if meteor_type == "small":
+                size = 20
+                speed = random.randint(300, 450)
+
+            elif meteor_type == "large":
+                size = 45
+                speed = random.randint(140, 240)
+            else:
+                size = 32
+                speed = random.randint(200, 350)
+
+            speed += int(survival_time * 5)
             x = random.randint(0, WIDTH - size)
 
             meteors.append({
                 "rect": pygame.Rect(x, -size, size, size),
-                "speed": random.randint(180, 350) + int(survival_time * 3)
+                "speed": speed
             })
 
         for meteor in meteors:
             meteor["rect"].y += int(meteor["speed"] * dt)
 
+            for laser in lasers:
+                laser.y -= int(LASER_SPEED * dt)
+
+            lasers  = [laser for laser in lasers if laser.bottom > 0]
+
             if player.colliderect(meteor["rect"]):
                 playing = False
 
-        meteors = [m for m in meteors if m["rect"].top < HEIGHT]
+        remaining_meteors = []
 
-    screen.fill(BLACK)
+        for meteor in meteors:
+            hit = False
 
-    pygame.draw.rect(
-        screen,
-        BLUE,
-        player,
-        border_radius=8
-    )
+            for laser in lasers:
+                if laser.colliderect(meteor["rect"]):
+                    hit = True
+                    lasers.remove(laser)
+                    break
+
+            if not hit:
+                remaining_meteors.append(meteor)
+
+        meteors = [
+            m for m in remaining_meteors
+            if m["rect"].top < HEIGHT
+        ]
+
+
+    screen.blit(background_img, (0, 0))
+    if playing:
+        for star in stars:
+            star[1] += star[2]
+
+            if star[1] > HEIGHT:
+                star[1] = 0
+                star[0] = random.randint(0, WIDTH)
+
+            pygame.draw.circle(
+                screen,
+                WHITE,
+                (star[0], star[1]),
+                star[2] //2 + 1
+            )
+    else:
+        for star in stars:
+            pygame.draw.circle(
+                screen,
+                WHITE,
+                (star[0], star[1]),
+                star[2] //2 + 1
+            )
+
+    screen.blit(ship_img, player)
+
+    for laser in lasers:
+        pygame.draw.rect(screen, (0, 255, 255), laser)
 
     for meteor in meteors:
-        pygame.draw.ellipse(
-            screen,
-            DARK_ORANGE,
-            meteor["rect"]
+        image = pygame.transform.scale(
+            meteor_img,
+            (meteor["rect"].width, meteor["rect"].height)
         )
-
-        pygame.draw.ellipse(
-            screen,
-            ORANGE,
-            meteor["rect"].inflate(-6,-6)
-        )
+        screen.blit(image, meteor["rect"])
 
     score = int(survival_time)
     high_score = max(high_score, score)
