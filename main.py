@@ -1,6 +1,7 @@
 import pygame
 import sys
 import random
+import os
 
 pygame.init()
 
@@ -13,6 +14,12 @@ game_surface = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
 pygame.display.set_caption("Meteor Dodge")
 
 clock = pygame.time.Clock()
+
+def draw_text_panel(rect, color=(5, 12, 28, 210)):
+    panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+    panel.fill(color)
+    screen.blit(panel, rect.topleft)
+
 
 def draw_screen_text(text, font, color, center):
     text_surface = font.render(text, True, color)
@@ -27,11 +34,12 @@ DARK_ORANGE = (190, 65, 25)
 WHITE = (255, 255, 255)
 RED = (255, 70, 70)
 
-font = pygame.font.Font(None, 18)
-big_font = pygame.font.Font(None, 36)
+font = pygame.font.Font(None, 30)
+big_font = pygame.font.Font(None, 64)
 
-menu_font = pygame.font.Font(None, 42)
-subtitle_font = pygame.font.Font(None, 20)
+menu_font = pygame.font.Font(None, 76)
+subtitle_font = pygame.font.Font(None, 36)
+small_font = pygame.font.Font(None, 28)
 
 ship_img = pygame.image.load("assets/ship.png").convert_alpha()
 ship_img = pygame.transform.scale(ship_img, (25, 25))
@@ -68,6 +76,7 @@ meteors = []
 lasers = []
 LASER_SPEED = 167
 particles = []
+fire_particles = []
 stars = [
     [
         random.randint(0, GAME_WIDTH - 1),
@@ -78,9 +87,19 @@ stars = [
 ]
 spawn_timer = 0
 survival_time = 0
-high_score = 0
+
+if os.path.exists("highscore.txt"):
+    with open("highscore.txt", "r") as file:
+        try:
+            high_score = int(file.read())
+        except ValueError:
+            high_score = 0
+else:
+    high_score = 0
+
 playing = False
 game_started = False
+
 
 running = True
 
@@ -156,19 +175,22 @@ while running:
             speed += int(survival_time * 2)
             x = random.randint(0, GAME_WIDTH - size)
 
-            meteor_image = pygame.transform.scale(
+            meteor_base_image = pygame.transform.scale(
                 pygame.image.load("assets/meteor.png").convert_alpha(),
                 (size, size)
             )
 
-            meteor_mask = pygame.mask.from_surface(meteor_image)
-
             meteors.append({
                 "rect": pygame.Rect(x, -size, size, size),
+                "x": x + size / 2,
                 "y": float(-size),
+                "size": size,
                 "speed": speed,
-                "image": meteor_image,
-                "mask": meteor_mask
+                "base_image": meteor_base_image,
+                "image": meteor_base_image,
+                "mask": pygame.mask.from_surface(meteor_base_image),
+                "angle":random.uniform(0, 360),
+                "rotation_speed": random.choice([-1, 1]) * random.randint(100, 240)
             })
 
         for laser in lasers:
@@ -178,7 +200,55 @@ while running:
 
         for meteor in meteors:
             meteor["y"] += meteor["speed"] * dt
-            meteor["rect"].y = round(meteor["y"])
+
+            meteor["angle"] = (
+                meteor["angle"] + meteor["rotation_speed"] * dt
+            ) % 360
+
+            rotated_image = pygame.transform.rotate(
+                meteor["base_image"],
+                meteor["angle"]
+            )
+
+            meteor["rect"] = rotated_image.get_rect(
+                center=(
+                    round(meteor["x"]),
+                    round(meteor["y"] + meteor["size"] / 2)
+                )
+            )
+
+            meteor["image"] = rotated_image
+            meteor["mask"] = pygame.mask.from_surface(rotated_image)
+
+            if random.random() < 0.8:
+                trail_length = random.uniform(8, 24)
+                side = random.choice([-1, 1])
+
+                fire_particles.append({
+                    "x": meteor["x"] + side * trail_length * 0.35
+                        + random.uniform(-2, 2),
+                    "y": meteor["y"] + random.uniform(0, meteor["size"] / 2),
+                    "vx": side * random.uniform(5, 25),
+                    "vy": random.uniform(-45, -15),
+                    "life": random.uniform(0.15, 0.35),
+                    "size": random.randint(1, 3),
+                    "color": random.choice([
+                        (255, 220, 80),
+                        (255, 140, 30),
+                        (255, 65, 30),
+                        (190, 45, 25)
+                    ])
+                })
+            if player.colliderect(meteor["rect"]):
+                offset = (
+                    meteor["rect"].x - player.x,
+                    meteor["rect"].y - player.y
+                )
+
+                if ship_mask.overlap(meteor["mask"], offset):
+                    playing = False
+                    lasers.clear()
+                    break
 
 
             if player.colliderect(meteor["rect"]):
@@ -263,13 +333,32 @@ while running:
         particle["y"] += particle["vy"] * dt
         particle["life"] -= dt
 
+    for particle in fire_particles:
+        particle["x"] += particle["vx"] * dt
+        particle["y"] += particle["vy"] * dt
+        particle["life"] -= dt
+
+    fire_particles = [
+        particle for particle in fire_particles
+        if particle["life"] > 0
+    ]
+
     particles = [
         p for p in particles
         if p["life"] > 0
     ]
 
+    for particle in fire_particles:
+        pygame.draw.circle(
+            game_surface,
+            particle["color"],
+            (int(particle["x"]), int(particle["y"])),
+            particle["size"]
+        )
+
     for meteor in meteors:
         game_surface.blit(meteor["image"], meteor["rect"])
+
 
     for particle in particles:
         pygame.draw.rect(
@@ -284,23 +373,13 @@ while running:
         )
 
     score = int(survival_time)
-    high_score = max(high_score, score)
 
+    if score > high_score:
+        high_score = score
 
-    if playing:
-        draw_screen_text(
-            f"Score: {score}",
-            subtitle_font,
-            WHITE,
-            (90, 22)
-        )
+        with open("highscore.txt", "w") as file:
+            file.write(str(high_score))
 
-        draw_screen_text(
-            f"Best: {high_score}",
-            subtitle_font,
-            WHITE,
-            (90, 48)
-        )
 
 
 
@@ -310,10 +389,25 @@ while running:
     )
     screen.blit(pixel_frame, (0, 0))
 
+    if playing:
+        draw_screen_text(
+            f"Score: {score}",
+            subtitle_font,
+            WHITE,
+            (100, 30)
+        )
+
+        draw_screen_text(
+            f"Best: {high_score}",
+            subtitle_font,
+            WHITE,
+            (100, 65)
+        )
+
     if game_started and not playing:
         draw_screen_text(
             "GAME OVER",
-            pygame.font.Font(None, 72),
+            pygame.font.Font(None, 96),
             RED,
             (WIDTH // 2, 245)
         )
@@ -333,6 +427,10 @@ while running:
         )
 
     if not game_started:
+        draw_text_panel(
+            pygame.Rect(100, 105, 700, 370)
+        )
+
         draw_screen_text(
             "METEOR DODGE",
             menu_font,
@@ -344,21 +442,21 @@ while running:
             "Press SPACE to start",
             subtitle_font,
             WHITE,
-            (WIDTH // 2, 300)
+            (WIDTH // 2, 280)
         )
 
         draw_screen_text(
             "Move: A/D or arrow keys",
             subtitle_font,
             WHITE,
-            (WIDTH // 2, 375)
+            (WIDTH // 2, 355)
         )
 
         draw_screen_text(
             "Shoot: SPACE",
             subtitle_font,
             ORANGE,
-            (WIDTH // 2, 420)
+            (WIDTH // 2, 410)
         )
 
     pygame.display.flip()
