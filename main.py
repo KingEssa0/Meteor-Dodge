@@ -1,3 +1,4 @@
+import math
 import pygame
 import sys
 import random
@@ -27,12 +28,51 @@ def draw_screen_text(text, font, color, center):
     screen.blit(text_surface, text_rect)
 
 
+def add_popup(x,  y, text, color=(255, 255, 80)):
+    score_popups.append({
+        "x": float(x),
+        "y": float(y),
+        "text": text,
+        "color": color,
+        "life": 0.8
+    })
+
+
+def create_particles(x, y, count, colors, speed=80):
+    for _ in range(count):
+        angle = random.uniform(0, math.tau)
+        velocity = random.uniform(speed * 0.3, speed)
+
+
+        particles.append({
+            "x": float(x),
+            "y": float(y),
+            "vx": math.cos(angle) * velocity,
+            "vy": math.sin(angle) * velocity,
+            "life": random.uniform(0.25, 0.65),
+            "size": random.randint(1, 3),
+            "color": random.choice(colors),
+        })
+
+
+def save_progress():
+    with open("highscore.txt", "w") as file:
+        file.write(str(high_score))
+
+    with open("unlocked_ships.txt", "w") as file:
+        file.write(",".join(map(str, unlocked_ships)))
+
+
 BLACK = (10, 10, 20)
 BLUE = (50, 160, 255)
 ORANGE = (255, 120, 40)
 DARK_ORANGE = (190, 65, 25)
 WHITE = (255, 255, 255)
 RED = (255, 70, 70)
+YELLOW = (255, 255, 80)
+CYAN = (0, 255, 255)
+GREEN = (70, 255, 130)
+PURPLE = (190, 100, 255)
 
 font = pygame.font.Font(None, 30)
 big_font = pygame.font.Font(None, 64)
@@ -107,6 +147,42 @@ stars = [
 spawn_timer = 0
 survival_time = 0
 
+destroy_score = 0
+combo = 0
+combo_timer = 0
+COMBO_WINDOW = 2.0
+
+METEOR_POINTS = {
+    7: 10,
+    11: 25,
+    15: 50
+}
+
+score_popups = []
+powerups = []
+active_powerups = {
+    "rapid": 0,
+    "shield": 0,
+    "slow": 0
+}
+
+laser_cooldown = 0
+
+LASER_NORMAL_COOLDOWN = 0.3
+LASER_RAPID_COOLDOWN = 0.09
+
+ship_options = [
+    {"name": "STANDARD", "speed": 133, "laser": 0.3,
+     "unlock": 0},
+    {"name": "SPEEDSTER", "speed": 175, "laser": 0.3,
+     "unlock": 500},
+    {"name": "RAPID", "speed": 120, "laser": 0.18,
+     "unlock": 1200}
+]
+
+selected_ship = 0
+unlocked_ships = [0]
+
 if os.path.exists("highscore.txt"):
     with open("highscore.txt", "r") as file:
         try:
@@ -151,13 +227,19 @@ while running:
                     game_started = True
 
             if event.key == pygame.K_SPACE and playing:
-                laser = pygame.Rect(
-                    player.centerx - 1,
-                    player.top,
-                    2,
-                    7
-                )
-                lasers.append(laser)
+                if laser_cooldown <= 0:
+                    laser = pygame.Rect(
+                        player.centerx - 1,
+                        player.top,
+                        2,
+                        7
+                    )
+                    lasers.append(laser)
+
+                    if active_powerups["rapid"] > 0:
+                        laser_cooldown = LASER_RAPID_COOLDOWN
+                    else:
+                        laser_cooldown = ship_options[selected_ship]["laser"]
         if event.type == pygame.QUIT:
             running = False
 
@@ -179,12 +261,22 @@ while running:
 
                 spawn_timer = 0
                 survival_time = 0
+                destroy_score = 0
+                combo = 0
+                combo_timer = 0
+                score_popups.clear()
+                powerups.clear()
+
+                for power in active_powerups:
+                    active_powerups[power] = 0
                 playing = True
                 game_started = True
 
     keys = pygame.key.get_pressed()
 
     if playing:
+        PLAYER_SPEED = ship_options[selected_ship]["speed"]
+
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             player.x -= int(PLAYER_SPEED * dt)
 
@@ -196,6 +288,17 @@ while running:
 
     if playing:
         spawn_timer += dt
+        laser_cooldown = max(0, laser_cooldown - dt)
+
+        for power in active_powerups:
+            active_powerups[power] = max(
+                0, active_powerups[power] - dt
+            )
+
+        if combo_timer > 0:
+            combo_timer -= dt
+        else:
+            combo = 0
 
         spawn_interval = max(0.2, METEOR_SPAWN_INTERVAL - survival_time * 0.01)
         if spawn_timer >= spawn_interval:
@@ -326,6 +429,35 @@ while running:
                     hit = True
                     lasers_to_remove.append(laser)
 
+                    points = METEOR_POINTS.get(meteor["size"], 10)
+
+                    if combo_timer > 0:
+                        combo += 1
+                    else:
+                        combo = 1
+
+                    combo_timer = COMBO_WINDOW
+
+                    multiplier = min(5, combo)
+                    earned_points = points * multiplier
+                    destroy_score += earned_points
+
+                    add_popup(
+                        meteor["rect"].centerx,
+                        meteor["rect"].centery,
+                        f"+{earned_points} x{multiplier}",
+                        YELLOW if multiplier < 3 else CYAN
+                    )
+
+                    fragment_count = 8 if meteor["size"] <= 7 else 16
+                    create_particles(
+                        meteor["rect"].centerx,
+                        meteor["rect"].centery,
+                        fragment_count,
+                        [ORANGE, DARK_ORANGE, RED, YELLOW, WHITE],
+                        speed=100 if meteor["size"] <= 7 else 140
+                    )
+
                     for _ in range(12):
                         particles.append({
                             "x": meteor["rect"].centerx,
@@ -412,6 +544,26 @@ while running:
     for meteor in meteors:
         game_surface.blit(meteor["image"], meteor["rect"])
 
+    for popup in score_popups:
+        popup["y"] -= 25 * dt
+        popup["life"] -= dt
+
+        popup_surface = small_font.render(
+            popup["text"],
+            True,
+            popup["color"]
+        )
+
+        game_surface.blit(
+            popup_surface,
+            (int(popup["x"]), int(popup["y"]))
+        )
+
+    score_popups = [
+        popup for popup in score_popups
+        if popup["life"] > 0
+    ]
+
 
     for particle in particles:
         pygame.draw.rect(
@@ -425,7 +577,7 @@ while running:
             )
         )
 
-    score = int(survival_time)
+    score = int(survival_time) + destroy_score
 
     if score > high_score:
         high_score = score
@@ -456,6 +608,14 @@ while running:
             WHITE,
             (100, 65)
         )
+
+        if combo >= 2:
+            draw_screen_text(
+                f"COMBO x{min(5, combo)}",
+                small_font,
+                CYAN,
+                (100, 95)
+            )
 
     if game_started and not playing and not death_animation:
         game_over_fade = min(
