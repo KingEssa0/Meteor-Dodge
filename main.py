@@ -45,14 +45,33 @@ ship_img = pygame.image.load("assets/ship.png").convert_alpha()
 ship_img = pygame.transform.scale(ship_img, (25, 25))
 ship_mask = pygame.mask.from_surface(ship_img)
 
-meteor_img = pygame.image.load("assets/meteor.png").convert_alpha()
-meteor_img = pygame.transform.scale(meteor_img, (45, 45))
-meteor_mask = pygame.mask.from_surface(meteor_img)
+meteor_original = pygame.image.load(
+    "assets/meteor.png"
+).convert_alpha()
+
+meteor_original = pygame.transform.scale(
+    meteor_original, (45, 45)
+)
 background_img = pygame.image.load("assets/background.png").convert()
 background_img = pygame.transform.scale(
     background_img, (GAME_WIDTH, GAME_HEIGHT)
 )
 
+start_screen_img = pygame.image.load(
+    "assets/start_screen.png"
+).convert()
+
+start_screen_img = pygame.transform.scale(
+    start_screen_img, (WIDTH, HEIGHT)
+)
+
+game_over_img = pygame.image.load(
+    "assets/game_over.png"
+).convert()
+
+game_over_img = pygame.transform.scale(
+    game_over_img, (WIDTH, HEIGHT)
+)
 
 PLAYER_WIDTH = 25
 PLAYER_HEIGHT = 25
@@ -100,29 +119,45 @@ else:
 playing = False
 game_started = False
 
+death_animation = False
+death_timer = 0
+DEATH_ANIMATION_DURATION = 1.0
+GAME_OVER_FADE_DURATION = 0.6
+game_over_fade = 0
 
+fade_overlay = pygame.Surface((WIDTH, HEIGHT))
+fade_overlay.fill((0, 0, 0))
 running = True
 
 while running:
     dt = clock.tick(FPS) / 1000
+    if death_animation:
+        death_timer += dt
+
+        if death_timer >= DEATH_ANIMATION_DURATION:
+            death_animation = False
+            game_over_fade = 0
+            fire_particles.clear()
+            meteors.clear()
 
     if playing:
         survival_time += dt
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
+            if event.key == pygame.K_RETURN:
                 if not game_started:
                     playing = True
                     game_started = True
-                elif playing:
-                    laser = pygame.Rect(
-                        player.centerx - 1,
-                        player.top,
-                        2,
-                        7
-                    )
-                    lasers.append(laser)
+
+            if event.key == pygame.K_SPACE and playing:
+                laser = pygame.Rect(
+                    player.centerx - 1,
+                    player.top,
+                    2,
+                    7
+                )
+                lasers.append(laser)
         if event.type == pygame.QUIT:
             running = False
 
@@ -136,6 +171,12 @@ while running:
                 meteors.clear()
                 lasers.clear()
                 particles.clear()
+                fire_particles.clear()
+
+                death_animation = False
+                death_timer = 0
+                game_over_fade = 0
+
                 spawn_timer = 0
                 survival_time = 0
                 playing = True
@@ -176,7 +217,7 @@ while running:
             x = random.randint(0, GAME_WIDTH - size)
 
             meteor_base_image = pygame.transform.scale(
-                pygame.image.load("assets/meteor.png").convert_alpha(),
+                meteor_original,
                 (size, size)
             )
 
@@ -239,16 +280,6 @@ while running:
                         (190, 45, 25)
                     ])
                 })
-            if player.colliderect(meteor["rect"]):
-                offset = (
-                    meteor["rect"].x - player.x,
-                    meteor["rect"].y - player.y
-                )
-
-                if ship_mask.overlap(meteor["mask"], offset):
-                    playing = False
-                    lasers.clear()
-                    break
 
 
             if player.colliderect(meteor["rect"]):
@@ -258,7 +289,26 @@ while running:
                 )
 
                 if ship_mask.overlap(meteor["mask"], offset):
+                    for _ in range(45):
+                        particles.append({
+                            "x": player.centerx,
+                            "y": player.centery,
+                            "vx": random.uniform(-100, 100),
+                            "vy": random.uniform(-100, 100),
+                            "life": random.uniform(0.4, 1.0),
+                            "size": random.randint(1, 4),
+                            "color": random.choice([
+                                (255, 255, 255),
+                                (255, 220, 80),
+                                (255, 140, 30),
+                                (255, 65, 30),
+                                (80, 180, 255)
+                            ])
+                        })
+
                     playing = False
+                    death_animation = True
+                    death_timer = 0
                     lasers.clear()
                     break
 
@@ -266,6 +316,9 @@ while running:
         lasers_to_remove = []
 
         for meteor in meteors:
+            if not playing:
+                break
+
             hit = False
 
             for laser in lasers:
@@ -321,7 +374,7 @@ while running:
                 star[2] //2 + 1
             )
 
-    if game_started:
+    if game_started and playing:
         game_surface.blit(ship_img, player)
 
     if playing:
@@ -404,60 +457,19 @@ while running:
             (100, 65)
         )
 
-    if game_started and not playing:
-        draw_screen_text(
-            "GAME OVER",
-            pygame.font.Font(None, 96),
-            RED,
-            (WIDTH // 2, 245)
+    if game_started and not playing and not death_animation:
+        game_over_fade = min(
+            255,
+            game_over_fade + 255 * dt / GAME_OVER_FADE_DURATION
         )
 
-        draw_screen_text(
-            f"Score: {score}",
-            subtitle_font,
-            WHITE,
-            (WIDTH // 2, 320)
-        )
+        screen.blit(game_over_img, (0, 0))
 
-        draw_screen_text(
-            "Press R to restart | ESC to quit",
-            subtitle_font,
-            WHITE,
-            (WIDTH // 2, 370)
-        )
+        fade_overlay.set_alpha(int(255 - game_over_fade))
+        screen.blit(fade_overlay, (0, 0))
 
     if not game_started:
-        draw_text_panel(
-            pygame.Rect(100, 105, 700, 370)
-        )
-
-        draw_screen_text(
-            "METEOR DODGE",
-            menu_font,
-            BLUE,
-            (WIDTH // 2, 165)
-        )
-
-        draw_screen_text(
-            "Press SPACE to start",
-            subtitle_font,
-            WHITE,
-            (WIDTH // 2, 280)
-        )
-
-        draw_screen_text(
-            "Move: A/D or arrow keys",
-            subtitle_font,
-            WHITE,
-            (WIDTH // 2, 355)
-        )
-
-        draw_screen_text(
-            "Shoot: SPACE",
-            subtitle_font,
-            ORANGE,
-            (WIDTH // 2, 410)
-        )
+        screen.blit(start_screen_img, (0, 0))
 
     pygame.display.flip()
 
