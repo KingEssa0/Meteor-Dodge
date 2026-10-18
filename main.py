@@ -172,16 +172,46 @@ LASER_NORMAL_COOLDOWN = 0.3
 LASER_RAPID_COOLDOWN = 0.09
 
 ship_options = [
-    {"name": "STANDARD", "speed": 133, "laser": 0.3,
-     "unlock": 0},
-    {"name": "SPEEDSTER", "speed": 175, "laser": 0.3,
-     "unlock": 500},
-    {"name": "RAPID", "speed": 120, "laser": 0.18,
-     "unlock": 1200}
+    {
+        "name": "STANDARD",
+        "speed": 133,
+        "laser": 0.3,
+        "price": 0
+    },
+    {
+        "name": "SPEEDSTER",
+        "speed": 175,
+        "laser": 0.3,
+        "price": 500
+    },
+    {
+        "name": "RAPID", "speed": 120, "laser": 0.18,
+        "price": 1200
+    }
 ]
 
 selected_ship = 0
 unlocked_ships = [0]
+shop_open = False
+
+if os.path.exists("unlocked_ships.txt"):
+    try:
+        with open("unlocked_ships.txt", "r") as file:
+            saved_ships = [
+                int(value)
+                for value in file.read().split(",")
+                if value.strip()
+            ]
+
+        unlocked_ships = sorted({
+            0,
+            *[
+                ship_id for ship_id in saved_ships
+                if 0 <= ship_id < len(ship_options)
+            ]
+        })
+    except (ValueError, OSError):
+        unlocked_ships = [0]
 
 if os.path.exists("highscore.txt"):
     with open("highscore.txt", "r") as file:
@@ -221,7 +251,36 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_RETURN:
+            if event.key == pygame.K_b and not playing and not death_animation:
+                shop_open = not shop_open
+
+            if shop_open:
+                if event.key == pygame.K_ESCAPE:
+                    shop_open = False
+
+                if event.key == pygame.K_LEFT:
+                    selected_ship = max(0, selected_ship - 1)
+
+                if event.key == pygame.K_RIGHT:
+                    selected_ship = min(
+                        len(ship_options) - 1,
+                        selected_ship + 1
+                    )
+
+                if event.key == pygame.K_RETURN:
+                    if selected_ship in unlocked_ships:
+                        shop_open = False
+
+                    else:
+                        ship_price = ship_options[selected_ship]["price"]
+                        current_score = destroy_score + int(survival_time)
+
+                        if current_score >= ship_price:
+                            unlocked_ships.append(selected_ship)
+                            selected_ship = selected_ship
+                            save_progress()
+                            shop_open = False
+            if event.key == pygame.K_RETURN and not shop_open:
                 if not game_started:
                     playing = True
                     game_started = True
@@ -627,8 +686,67 @@ while running:
 
         fade_overlay.set_alpha(int(255 - game_over_fade))
         screen.blit(fade_overlay, (0, 0))
+    if shop_open:
+        screen.fill((5, 10, 25))
 
-    if not game_started:
+        draw_screen_text(
+            "SHIP SHOP",
+            menu_font,
+            CYAN,
+            (WIDTH // 2, 90)
+        )
+
+        draw_screen_text(
+            f"Selected: {ship_options[selected_ship]['name']}",
+            subtitle_font,
+            WHITE,
+            (WIDTH // 2, 180)
+        )
+
+        selected_data = ship_options[selected_ship]
+
+        if selected_ship in unlocked_ships:
+            status = "UNLOCKED"
+            status_color = GREEN
+        else:
+            status = f"PRICE: {selected_data['price']} points"
+            status_color = YELLOW
+
+        draw_screen_text(
+            status,
+            subtitle_font,
+            status_color,
+            (WIDTH // 2, 240)
+        )
+
+        draw_screen_text(
+            f"Speed: {selected_data['speed']} | Laser: {selected_data['laser']}s",
+            small_font,
+            WHITE,
+            (WIDTH // 2, 300)
+        )
+
+        draw_screen_text(
+            "LEFT / RIGHT: Browse Ships",
+            small_font,
+            WHITE,
+            (WIDTH // 2, 390)
+        )
+
+        draw_screen_text(
+            "ENTER: Buy Ship / Select    B or ESC: Close",
+            small_font,
+            WHITE,
+            (WIDTH // 2, 435)
+        )
+
+        draw_screen_text(
+            f"Points: {int(survival_time) + destroy_score}",
+            subtitle_font,
+            YELLOW,
+            (WIDTH // 2, 500)
+        )
+    if not game_started and not shop_open:
         screen.blit(start_screen_img, (0, 0))
 
     pygame.display.flip()
