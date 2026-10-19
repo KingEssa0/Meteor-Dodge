@@ -16,6 +16,15 @@ pygame.display.set_caption("Meteor Dodge")
 
 clock = pygame.time.Clock()
 
+
+def resource_path(relative_path):
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
 def draw_text_panel(rect, color=(5, 12, 28, 210)):
     panel = pygame.Surface(rect.size, pygame.SRCALPHA)
     panel.fill(color)
@@ -62,6 +71,9 @@ def save_progress():
     with open("unlocked_ships.txt", "w") as file:
         file.write(",".join(map(str, unlocked_ships)))
 
+    with open("credits.txt", "w") as file:
+        file.write(str(credits))
+
 
 BLACK = (10, 10, 20)
 BLUE = (50, 160, 255)
@@ -81,18 +93,21 @@ menu_font = pygame.font.Font(None, 76)
 subtitle_font = pygame.font.Font(None, 36)
 small_font = pygame.font.Font(None, 28)
 
-ship_img = pygame.image.load("assets/ship.png").convert_alpha()
+ship_img = pygame.image.load(resource_path("assets/ship.png")).convert_alpha()
 ship_img = pygame.transform.scale(ship_img, (25, 25))
 ship_mask = pygame.mask.from_surface(ship_img)
 
 meteor_original = pygame.image.load(
-    "assets/meteor.png"
+    resource_path("assets/meteor.png")
 ).convert_alpha()
 
 meteor_original = pygame.transform.scale(
     meteor_original, (45, 45)
 )
-background_img = pygame.image.load("assets/background.png").convert()
+
+background_img = pygame.image.load(
+    resource_path("assets/background.png")
+)
 background_img = pygame.transform.scale(
     background_img, (GAME_WIDTH, GAME_HEIGHT)
 )
@@ -148,6 +163,7 @@ spawn_timer = 0
 survival_time = 0
 
 destroy_score = 0
+run_credited = False
 combo = 0
 combo_timer = 0
 COMBO_WINDOW = 2.0
@@ -185,7 +201,9 @@ ship_options = [
         "price": 500
     },
     {
-        "name": "RAPID", "speed": 120, "laser": 0.18,
+        "name": "RAPID",
+        "speed": 120,
+        "laser": 0.18,
         "price": 1200
     }
 ]
@@ -221,6 +239,16 @@ if os.path.exists("highscore.txt"):
             high_score = 0
 else:
     high_score = 0
+
+if os.path.exists("credits.txt"):
+    with open("credits.txt", "r") as file:
+        try:
+            credits = int(file.read())
+        except ValueError:
+            credits = 0
+
+else:
+    credits = 0
 
 playing = False
 game_started = False
@@ -270,18 +298,19 @@ while running:
                 if event.key == pygame.K_RETURN:
                     if selected_ship in unlocked_ships:
                         shop_open = False
-
                     else:
                         ship_price = ship_options[selected_ship]["price"]
-                        current_score = destroy_score + int(survival_time)
 
-                        if current_score >= ship_price:
+                        if credits >= ship_price:
+                            credits -= ship_price
                             unlocked_ships.append(selected_ship)
-                            selected_ship = selected_ship
                             save_progress()
                             shop_open = False
             if event.key == pygame.K_RETURN and not shop_open:
                 if not game_started:
+                    run_credited = False
+                    survival_time = 0
+                    destroy_score = 0
                     playing = True
                     game_started = True
 
@@ -321,6 +350,7 @@ while running:
                 spawn_timer = 0
                 survival_time = 0
                 destroy_score = 0
+                run_credited = False
                 combo = 0
                 combo_timer = 0
                 score_popups.clear()
@@ -467,6 +497,11 @@ while running:
                                 (80, 180, 255)
                             ])
                         })
+
+                    if not run_credited:
+                        credits += int(survival_time) + destroy_score
+                        run_credited = True
+                        save_progress()
 
                     playing = False
                     death_animation = True
@@ -640,9 +675,7 @@ while running:
 
     if score > high_score:
         high_score = score
-
-        with open("highscore.txt", "w") as file:
-            file.write(str(high_score))
+        save_progress()
 
 
 
@@ -709,7 +742,7 @@ while running:
             status = "UNLOCKED"
             status_color = GREEN
         else:
-            status = f"PRICE: {selected_data['price']} points"
+            status = f"Price: {selected_data['price']} credits"
             status_color = YELLOW
 
         draw_screen_text(
@@ -741,7 +774,7 @@ while running:
         )
 
         draw_screen_text(
-            f"Points: {int(survival_time) + destroy_score}",
+            f"Credits: {credits}",
             subtitle_font,
             YELLOW,
             (WIDTH // 2, 500)
